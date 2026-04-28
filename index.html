@@ -50,13 +50,28 @@
 
         /* ── LOBBY ─────────────────────────── */
         #screen-lobby h2 { font-size:1.8em; color:#00e5ff; letter-spacing:4px; margin-bottom:14px; }
-        #screen-lobby p  { color:#555; font-size:.8em; letter-spacing:2px; margin-bottom:32px; max-width:360px; text-align:center; }
+        #screen-lobby p  { color:#555; font-size:.8em; letter-spacing:2px; margin-bottom:20px; max-width:380px; text-align:center; line-height:1.7; }
         .spinner {
             width:48px; height:48px; border:3px solid #1a1a3a;
             border-top-color:#00e5ff; border-radius:50%;
             animation:spin 0.9s linear infinite; margin:0 auto 28px;
         }
         @keyframes spin { to{ transform:rotate(360deg); } }
+
+        /* server URL input */
+        #url-label { font-size:.65em; color:#444; letter-spacing:3px; margin-bottom:8px; text-align:left; width:380px; }
+        #server-url-input {
+            width:380px; padding:12px 14px;
+            background:#0d0d22; border:1px solid #2a2a55;
+            color:#00e5ff; font-family:'Courier New',monospace; font-size:.82em;
+            letter-spacing:1px; outline:none; margin-bottom:12px;
+            transition:border-color .2s;
+        }
+        #server-url-input:focus { border-color:#00e5ff; }
+        #server-url-input::placeholder { color:#2a2a55; }
+        .url-hint { font-size:.65em; color:#333; letter-spacing:1px; margin-bottom:24px; text-align:left; width:380px; }
+        .url-hint a { color:#444; text-decoration:none; }
+        .url-hint a:hover { color:#666; }
 
         /* ── HUD ───────────────────────────── */
         #hud { width:900px; display:flex; justify-content:space-between; align-items:center; padding:7px 0; }
@@ -137,10 +152,26 @@
 
 <!-- ══ LOBBY ════════════════════════════════════════════ -->
 <div id="screen-lobby" class="screen">
-    <h2>FINDING MATCH</h2>
-    <div class="spinner"></div>
-    <p id="lobby-msg">Searching for an opponent… Share the game link so a friend can join!</p>
-    <button class="menu-btn btn-neutral" style="width:220px" onclick="goToMenu()">&#8592; CANCEL</button>
+    <h2>ONLINE MULTIPLAYER</h2>
+
+    <!-- Step 1: Enter server URL -->
+    <div id="lobby-setup">
+        <p>Paste your Render server URL below.<br>Find it in your <strong style="color:#555">Render dashboard → duel-arena-server → URL</strong></p>
+        <div id="url-label">SERVER URL</div>
+        <input id="server-url-input" type="text"
+               placeholder="wss://your-service-xxxx.onrender.com"
+               spellcheck="false" autocomplete="off">
+        <div class="url-hint">&#9432;&nbsp; Must start with <code>wss://</code> &nbsp;·&nbsp; First load may take ~30s (free tier cold start)</div>
+        <button class="menu-btn btn-online" onclick="connectAndSearch()" style="width:380px;margin-bottom:9px">FIND MATCH</button>
+        <button class="menu-btn btn-neutral" style="width:380px" onclick="goToMenu()">&#8592; BACK</button>
+    </div>
+
+    <!-- Step 2: Searching -->
+    <div id="lobby-searching" style="display:none">
+        <div class="spinner"></div>
+        <p id="lobby-msg">Connecting to server…</p>
+        <button class="menu-btn btn-neutral" style="width:220px" onclick="goToMenu()">&#8592; CANCEL</button>
+    </div>
 </div>
 
 <!-- ══ GAME ══════════════════════════════════════════════ -->
@@ -204,13 +235,17 @@
      SCRIPT
 ═══════════════════════════════════════════════════════════ -->
 <script>
-// ─── WebSocket server URL ────────────────────────────────
-const WS_URL = (() => {
+// ─── WebSocket server URL (dynamic — set when player clicks Find Match) ──
+let WS_URL = (() => {
     const h = window.location.hostname;
     if (h === 'localhost' || h === '127.0.0.1') return 'ws://localhost:3000';
-    if (h.includes('github.io'))                return 'wss://duel-arena-server.onrender.com';
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}`;
+    // On Render itself, use same host
+    if (!h.includes('github.io')) {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        return `${proto}://${location.host}`;
+    }
+    // GitHub Pages: load saved URL from localStorage (user pastes Render URL)
+    return localStorage.getItem('wsServerUrl') || '';
 })();
 
 // ─── Game constants (mirror server.js) ──────────────────
@@ -277,7 +312,29 @@ function connBadge(cls, label) {
 function startOnline() {
     mode = 'online';
     particles = []; trails = {};
+    // Pre-fill saved URL (or auto-detect for non-GitHub-Pages)
+    const input = document.getElementById('server-url-input');
+    const h = window.location.hostname;
+    if (h === 'localhost' || h === '127.0.0.1') {
+        input.value = 'ws://localhost:3000';
+    } else if (!h.includes('github.io')) {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        input.value = `${proto}://${location.host}`;
+    } else {
+        input.value = localStorage.getItem('wsServerUrl') || '';
+    }
+    document.getElementById('lobby-setup').style.display    = 'block';
+    document.getElementById('lobby-searching').style.display = 'none';
     show('screen-lobby');
+}
+
+function connectAndSearch() {
+    const raw = document.getElementById('server-url-input').value.trim();
+    if (!raw) { alert('Please enter your server URL.'); return; }
+    WS_URL = raw;
+    localStorage.setItem('wsServerUrl', raw);
+    document.getElementById('lobby-setup').style.display    = 'none';
+    document.getElementById('lobby-searching').style.display = 'block';
     connectWS();
 }
 
@@ -332,8 +389,12 @@ function connectWS() {
 
     ws.onmessage = ({ data }) => {
         const msg = JSON.parse(data);
-        if      (msg.type === 'waiting') { connBadge('yellow', 'WAITING FOR OPPONENT…'); }
-        else if (msg.type === 'start')   { onMatchStart(msg.playerIndex); }
+        if (msg.type === 'waiting') {
+            connBadge('yellow', 'WAITING FOR OPPONENT…');
+            document.getElementById('lobby-msg').textContent =
+                'Connected! Waiting for an opponent… Share the game link with a friend!';
+        }
+        else if (msg.type === 'start') { onMatchStart(msg.playerIndex); }
         else if (msg.type === 'state')   { onServerState(msg.state); }
         else if (msg.type === 'opponentLeft') {
             connBadge('red', 'OPPONENT LEFT');
@@ -344,7 +405,11 @@ function connectWS() {
 
 function wsError(msg) {
     connBadge('red', 'ERROR');
-    document.getElementById('lobby-msg').textContent = msg + ' Make sure the server is running.';
+    // Show setup panel again with error
+    document.getElementById('lobby-searching').style.display = 'none';
+    document.getElementById('lobby-setup').style.display    = 'block';
+    document.getElementById('url-label').textContent = '⚠ ' + msg + ' Check the URL and try again.';
+    document.getElementById('url-label').style.color = '#ff4444';
 }
 
 function onMatchStart(idx) {
