@@ -1,0 +1,17 @@
+{
+  "name": "duel-arena",
+  "version": "1.0.0",
+  "description": "2D online multiplayer shooter",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
