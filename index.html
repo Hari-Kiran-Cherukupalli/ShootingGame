@@ -235,17 +235,17 @@
      SCRIPT
 ═══════════════════════════════════════════════════════════ -->
 <script>
-// ─── WebSocket server URL (dynamic — set when player clicks Find Match) ──
+// ─── WebSocket server URL ────────────────────────────────
+const RENDER_URL = 'wss://duel-arena-server-fqrw.onrender.com';
 let WS_URL = (() => {
     const h = window.location.hostname;
     if (h === 'localhost' || h === '127.0.0.1') return 'ws://localhost:3000';
-    // On Render itself, use same host
     if (!h.includes('github.io')) {
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
         return `${proto}://${location.host}`;
     }
-    // GitHub Pages: load saved URL from localStorage (user pastes Render URL)
-    return localStorage.getItem('wsServerUrl') || '';
+    // GitHub Pages → use saved override or default to known Render URL
+    return localStorage.getItem('wsServerUrl') || RENDER_URL;
 })();
 
 // ─── Game constants (mirror server.js) ──────────────────
@@ -321,7 +321,7 @@ function startOnline() {
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
         input.value = `${proto}://${location.host}`;
     } else {
-        input.value = localStorage.getItem('wsServerUrl') || '';
+        input.value = localStorage.getItem('wsServerUrl') || RENDER_URL;
     }
     document.getElementById('lobby-setup').style.display    = 'block';
     document.getElementById('lobby-searching').style.display = 'none';
